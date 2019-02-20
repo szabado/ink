@@ -23,8 +23,12 @@ func init() {
 }
 
 var RootCmd = cobra.Command{
-	Use:  "ink [stuff]",
-	Long: "Your digital notepad to write down your stray thoughts.",
+	Use:          "ink [stuff]",
+	Long:         "Your digital notepad to write down your stray thoughts.",
+	SilenceUsage: true,
+	Args: func(cmd *cobra.Command, args []string) error {
+		return nil
+	},
 	PersistentPreRun: func(cmd *cobra.Command, args []string) {
 		log.SetLevel(log.FatalLevel)
 		if debug {
@@ -37,11 +41,13 @@ var RootCmd = cobra.Command{
 			log.WithError(err).Fatalf("Could not open ink datastore")
 		}
 	},
-	Run: runRoot,
+	RunE: runRoot,
 }
 
 type list struct {
 	Values map[string]string `json:"value"`
+	//Ctime uint64 `json:"ctime"`
+	//Mtime uint64 `json:"mtime"`
 }
 
 func newList() *list {
@@ -50,7 +56,7 @@ func newList() *list {
 	}
 }
 
-func runRoot(cmd *cobra.Command, args []string) {
+func runRoot(cmd *cobra.Command, args []string) error {
 	defer db.Close()
 
 	var err error
@@ -69,9 +75,7 @@ func runRoot(cmd *cobra.Command, args []string) {
 		err = threeArg(args)
 	}
 
-	if err != nil {
-		log.WithError(err).Fatalf("Error querying database")
-	}
+	return err
 }
 
 func zeroArg(_ []string) error {
@@ -101,12 +105,29 @@ func oneArg(args []string) error {
 		item, err := txn.Get(key)
 		if err == badger.ErrKeyNotFound {
 			log.WithField("key", string(key)).Debug("No list found, looking for matching item")
-			if !findItem(txn, string(key)) {
+
+			_, v, err := findItem(txn, string(key))
+			if err == errEntryNotFound {
 				log.WithField("key", string(key)).Debug("No item found")
+
+				// The third possible behaviour here is creating a notebook
 				if err := createList(txn, key); err != nil {
 					return err
 				}
+			} else if err != errDuplicateEntry {
+				// TODO: handle gracefully
+				panic(err)
+			} else if err != nil {
+				// TODO: handle gracefully
+				panic(err)
 			}
+
+			err = clipboard.WriteAll(v)
+			if err != nil {
+				// TODO: handle gracefully
+				panic(err)
+			}
+
 			return nil
 		} else if err != nil {
 			return err
@@ -126,44 +147,12 @@ func oneArg(args []string) error {
 	return err
 }
 
-func findItem(txn *badger.Txn, item string) bool {
-	it := txn.NewIterator(badger.DefaultIteratorOptions)
-	defer it.Close()
-
-	found := false
-	for it.Rewind(); it.Valid(); it.Next() {
-		logger := log.WithField("list", fmt.Sprintf("%s", it.Item().Key()))
-
-		l, err := unmarshalItem(it.Item())
-		if err != nil {
-			logger.WithError(err).Error("Couldn't unmarshal list")
-			continue
-		}
-
-		// TODO: aggregate all duplicates/warn if there are any
-		for itemName, itemValue := range l.Values {
-			if itemName != item {
-				continue
-			}
-
-			found = true
-			err := clipboard.WriteAll(itemValue)
-			if err != nil {
-				log.WithError(err).WithFields(log.Fields{"item": itemName, "value": itemValue}).
-					Error("Error writing item to clipboard")
-				continue
-			}
-		}
-	}
-
-	return found
-}
-
 func twoArg(args []string) error {
 	key := []byte(args[0])
 	err := db.View(func(txn *badger.Txn) error {
 		item, err := txn.Get(key)
 		if err != nil {
+			// TODO: handle missing keys
 			return err
 		}
 
@@ -178,7 +167,6 @@ func twoArg(args []string) error {
 }
 
 func threeArg(args []string) error {
-	// TODO: Support vim/other editors
 	key := []byte(args[0])
 
 	err := db.Update(func(txn *badger.Txn) error {
@@ -206,27 +194,4 @@ func threeArg(args []string) error {
 	})
 
 	return err
-}
-
-func createList(txn *badger.Txn, key []byte) error {
-	log.WithField("key", string(key)).Debug("Creating new list")
-
-	b, err := json.Marshal(newList())
-	if err != nil {
-		return err
-	}
-
-	return txn.Set(key, b)
-}
-
-func unmarshalItem(item *badger.Item) (*list, error) {
-	l := newList()
-	err := item.Value(func(val []byte) error {
-		return json.Unmarshal(val, l)
-	})
-
-	if err != nil {
-		return nil, err
-	}
-	return l, nil
 }
