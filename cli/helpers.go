@@ -3,6 +3,7 @@ package cli
 import (
 	"encoding/json"
 	"fmt"
+	"time"
 
 	"github.com/dgraph-io/badger"
 	"github.com/pkg/errors"
@@ -35,6 +36,14 @@ func unmarshalItem(item *badger.Item) (*notebook, error) {
 	if err != nil {
 		return nil, err
 	}
+
+	if n.Ctime.IsZero() {
+		n.Ctime = time.Now()
+		n.Mtime = n.Ctime
+	} else if n.Mtime.IsZero() {
+		n.Mtime = time.Now()
+	}
+
 	return n, nil
 }
 

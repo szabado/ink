@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/atotto/clipboard"
 	"github.com/dgraph-io/badger"
@@ -46,15 +47,16 @@ var RootCmd = cobra.Command{
 
 type notebook struct {
 	Entries map[string]string `json:"value"`
-	//Ctime time.Time `json:"ctime"`
-	//Mtime time.Time `json:"mtime"`
+	Ctime time.Time `json:"ctime"`
+	Mtime time.Time `json:"mtime"`
 }
 
 func newNotebook() *notebook {
+	now := time.Now()
 	return &notebook{
 		Entries: make(map[string]string),
-		//Ctime: time.Now(),
-		//Mtime: time.Now(),
+		Ctime: now,
+		Mtime: now,
 	}
 }
 
