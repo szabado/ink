@@ -34,12 +34,12 @@ func runCopy(cmd *cobra.Command, args []string) error {
 			return err
 		}
 
-		l, err := unmarshalItem(item)
+		n, err := unmarshalItem(item)
 		if err != nil {
 			return err
 		}
 
-		s, ok := l.Values[args[1]]
+		s, ok := n.Entries[args[1]]
 		if !ok {
 			// TODO: handle
 		}

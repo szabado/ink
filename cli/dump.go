@@ -39,7 +39,7 @@ func dumpEverything() error {
 		defer it.Close()
 
 		for it.Rewind(); it.Valid(); it.Next() {
-			err := printNotebook(it.Item())
+			err := printNotebookEntries(it.Item())
 			if err != nil {
 				return err
 			}
@@ -57,18 +57,18 @@ func dumpNotebook(notebook string) error {
 		} else if err != nil {
 			return err
 		}
-		return printNotebook(item)
+		return printNotebookEntries(item)
 	})
 }
 
-func printNotebook(item *badger.Item) error {
-	l, err := unmarshalItem(item)
+func printNotebookEntries(item *badger.Item) error {
+	n, err := unmarshalItem(item)
 	if err != nil {
 		return err
 	}
 
 	fmt.Printf("%s:\n", item.Key())
-	for k, v := range l.Values {
+	for k, v := range n.Entries {
 		fmt.Printf("  %s: %s\n", k, v)
 	}
 

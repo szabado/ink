@@ -15,44 +15,44 @@ var (
 	errTerminate      = errors.New("already printed user error, shutting down cli")
 )
 
-func createList(txn *badger.Txn, key []byte) error {
-	log.WithField("key", string(key)).Debug("Creating new list")
+func createList(txn *badger.Txn, key string) error {
+	log.WithField("key", string(key)).Debug("Creating new notebook")
 
-	b, err := json.Marshal(newList())
+	b, err := json.Marshal(newNotebook())
 	if err != nil {
 		return err
 	}
 
-	return txn.Set(key, b)
+	return txn.Set([]byte(key), b)
 }
 
-func unmarshalItem(item *badger.Item) (*list, error) {
-	l := newList()
+func unmarshalItem(item *badger.Item) (*notebook, error) {
+	n := newNotebook()
 	err := item.Value(func(val []byte) error {
-		return json.Unmarshal(val, l)
+		return json.Unmarshal(val, n)
 	})
 
 	if err != nil {
 		return nil, err
 	}
-	return l, nil
+	return n, nil
 }
 
-func findItem(txn *badger.Txn, needle string) (notebook string, value string, err error) {
+func findEntry(txn *badger.Txn, needle string) (notebook string, value string, err error) {
 	it := txn.NewIterator(badger.DefaultIteratorOptions)
 	defer it.Close()
 
 	found := false
 	for it.Rewind(); it.Valid(); it.Next() {
-		logger := log.WithField("list", fmt.Sprintf("%s", it.Item().Key()))
+		logger := log.WithField("notebook", fmt.Sprintf("%s", it.Item().Key()))
 
-		l, err := unmarshalItem(it.Item())
+		n, err := unmarshalItem(it.Item())
 		if err != nil {
-			logger.WithError(err).Error("Couldn't unmarshal list")
+			logger.WithError(err).Error("Couldn't unmarshal notebook")
 			continue
 		}
 
-		for e, v := range l.Values {
+		for e, v := range n.Entries {
 			if e != needle {
 				continue
 			} else if found {
@@ -65,8 +65,8 @@ func findItem(txn *badger.Txn, needle string) (notebook string, value string, er
 
 			found = true
 			if err != nil {
-				log.WithError(err).WithFields(log.Fields{"item": e, "value": value}).
-					Error("Error writing item to clipboard")
+				log.WithError(err).WithFields(log.Fields{"entry": e, "value": value}).
+					Error("Error writing to clipboard")
 				continue
 			}
 		}
@@ -93,6 +93,8 @@ func notifyUser(err error, notebook, entry, value string) error {
 		fmt.Printf("%s found in multiple notebooks", entry)
 	case errTerminate:
 		// Do nothing
+	case nil:
+		// Do nothing
 	default:
 		logger.Error("Unknown error")
 		fmt.Printf("ink encountered an unknown error: %v\n", err)
@@ -110,5 +112,5 @@ func handleTerminate(err error) error {
 
 // handle wraps notifyUser and handleTerminate
 func handle(err error, notebook, entry, value string) error {
-
+	return handleTerminate(notifyUser(err, notebook, entry, value))
 }

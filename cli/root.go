@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
-	"time"
 
 	"github.com/atotto/clipboard"
 	"github.com/dgraph-io/badger"
@@ -45,15 +44,15 @@ var RootCmd = cobra.Command{
 	RunE: runRoot,
 }
 
-type list struct {
-	Values map[string]string `json:"value"`
+type notebook struct {
+	Entries map[string]string `json:"value"`
 	//Ctime time.Time `json:"ctime"`
 	//Mtime time.Time `json:"mtime"`
 }
 
-func newList() *list {
-	return &list{
-		Values: make(map[string]string),
+func newNotebook() *notebook {
+	return &notebook{
+		Entries: make(map[string]string),
 		//Ctime: time.Now(),
 		//Mtime: time.Now(),
 	}
@@ -65,11 +64,11 @@ func runRoot(cmd *cobra.Command, args []string) error {
 	var err error
 	switch len(args) {
 	case 0:
-		err = listAll(args)
+		err = listAllNotebooks()
 	case 1:
-		err = oneArg(args)
+		err = oneArg(args[0])
 	case 2:
-		err = getEntry(args)
+		err = getEntry(args[0], args[1])
 	default:
 		args[2] = strings.Join(args[2:], " ")
 		args = args[0:3]
@@ -81,17 +80,18 @@ func runRoot(cmd *cobra.Command, args []string) error {
 	return err
 }
 
-func listAll(_ []string) error {
+func listAllNotebooks() error {
 	return handleTerminate(db.View(func(txn *badger.Txn) error {
 		it := txn.NewIterator(badger.DefaultIteratorOptions)
 		defer it.Close()
 
 		for it.Rewind(); it.Valid(); it.Next() {
-			l, err := unmarshalItem(it.Item())
+			n, err := unmarshalItem(it.Item())
+			nName := string(it.Item().Key())
 			if err != nil {
-				fmt.Printf("%s [data corrupted]\n", it.Item().Key())
+				fmt.Printf("%s [data corrupted]\n", nName)
 			} else {
-				fmt.Printf("%s (%v)\n", it.Item().Key(), len(l.Values))
+				fmt.Printf("%s (%v)\n", nName, len(n.Entries))
 			}
 		}
 
@@ -99,55 +99,55 @@ func listAll(_ []string) error {
 	}))
 }
 
-func oneArg(args []string) error {
-	key := []byte(args[0])
-	return handleTerminate(db.Update(func(txn *badger.Txn) error {
-		item, err := txn.Get(key)
-		if err == badger.ErrKeyNotFound {
-			log.WithField("key", string(key)).Debug("No list found, looking for matching item")
+func oneArg(key string) error {
+	var (
+		notebook = key
+		entry = ""
+		value = "n/a"
+	)
 
-			_, v, err := findItem(txn, string(key))
-			if err == errEntryNotFound {
-				log.WithField("key", string(key)).Debug("No item found")
-
-				// The third possible behaviour here is creating a notebook
-				if err := createList(txn, key); err != nil {
-					return err
-				}
-			} else if err != errDuplicateEntry {
-				// TODO: handle gracefully
-				panic(err)
-			} else if err != nil {
-				// TODO: handle gracefully
-				panic(err)
-			}
-
-			err = clipboard.WriteAll(v)
+	err := db.Update(func(txn *badger.Txn) error {
+		item, err := txn.Get([]byte(notebook))
+		if err == nil {
+			// We found the notebook we were looking for
+			n, err := unmarshalItem(item)
 			if err != nil {
-				// TODO: handle gracefully
-				panic(err)
+				return err
 			}
 
+			for entry := range n.Entries {
+				fmt.Println(entry)
+			}
 			return nil
-		} else if err != nil {
+		} else if err != badger.ErrKeyNotFound {
 			return err
 		}
 
-		l, err := unmarshalItem(item)
-		if err != nil {
+		// It wasn't a notebook.  Try to find an entry
+		entry = key
+		notebook = ""
+
+		_, v, err := findEntry(txn, entry)
+		if err == nil {
+			// We found the entry we were looking for
+			value = v
+			return clipboard.WriteAll(v)
+		} else if err != errEntryNotFound {
 			return err
 		}
 
-		for itemName := range l.Values {
-			fmt.Println(itemName)
-		}
-		return nil
-	}))
+		notebook = key
+		entry = ""
+		// Create a notebook with the specified name
+		return createList(txn, notebook)
+	})
+
+	return handle(err, notebook, entry, value)
 }
 
 func getEntry(notebook, entry string) error {
 	key := []byte(notebook)
-	return handleTerminate(db.View(func(txn *badger.Txn) error {
+	err := db.View(func(txn *badger.Txn) error {
 		item, err := txn.Get(key)
 		if err == badger.ErrKeyNotFound {
 			return notifyUser(err, notebook, entry, "n/a")
@@ -155,23 +155,25 @@ func getEntry(notebook, entry string) error {
 			return notifyUser(err, notebook, entry, "n/a")
 		}
 
-		l, err := unmarshalItem(item)
+		n, err := unmarshalItem(item)
 		if err != nil {
 			return err
 		}
-		return clipboard.WriteAll(l.Values[entry])
-	}))
+		return clipboard.WriteAll(n.Entries[entry])
+	})
+
+	return handle(err, notebook, entry, "n/a")
 }
 
 func newEntry(notebook, entry, content string) error {
 	key := []byte(notebook)
 
 	err := db.Update(func(txn *badger.Txn) error {
-		l := newList()
+		n := newNotebook()
 
 		item, err := txn.Get(key)
 		if err == badger.ErrKeyNotFound {
-			l, err = unmarshalItem(item)
+			n, err = unmarshalItem(item)
 
 			if err != nil {
 				return err
@@ -180,9 +182,9 @@ func newEntry(notebook, entry, content string) error {
 			return err
 		}
 
-		l.Values[entry] = content
+		n.Entries[entry] = content
 
-		b, err := json.Marshal(l)
+		b, err := json.Marshal(n)
 		if err != nil {
 			return err
 		}

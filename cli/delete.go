@@ -23,9 +23,9 @@ func runDelete(cmd *cobra.Command, args []string) error {
 	var err error
 	switch len(args) {
 	case 1:
-		err = deleteList(args[0])
+		err = deleteNotebook(args[0])
 	case 2:
-		err = deleteItem(args[0], args[1])
+		err = deleteEntry(args[0], args[1])
 	default:
 		panic("Do you mean nuke?")
 	}
@@ -33,34 +33,34 @@ func runDelete(cmd *cobra.Command, args []string) error {
 	return err
 }
 
-func deleteList(list string) error {
+func deleteNotebook(notebook string) error {
 	return db.Update(func(txn *badger.Txn) error {
-		return txn.Delete([]byte(list))
+		return txn.Delete([]byte(notebook))
 	})
 }
 
-func deleteItem(list, itemName string) error {
+func deleteEntry(notebook, entry string) error {
 	return db.Update(func(txn *badger.Txn) error {
-		item, err := txn.Get([]byte(list))
+		item, err := txn.Get([]byte(notebook))
 		if err != nil {
 			return err
 		}
 
-		l, err := unmarshalItem(item)
+		n, err := unmarshalItem(item)
 		if err != nil {
 			return err
 		}
 
-		for key := range l.Values {
-			if key == itemName {
-				delete(l.Values, key)
+		for key := range n.Entries {
+			if key == entry {
+				delete(n.Entries, key)
 			}
 		}
 
-		b, err := json.Marshal(l)
+		b, err := json.Marshal(n)
 		if err != nil {
 			return err
 		}
-		return txn.Set([]byte(list), b)
+		return txn.Set([]byte(notebook), b)
 	})
 }
