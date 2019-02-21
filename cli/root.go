@@ -8,6 +8,7 @@ import (
 
 	"github.com/atotto/clipboard"
 	"github.com/dgraph-io/badger"
+	"github.com/dustin/go-humanize"
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 
@@ -47,16 +48,16 @@ var RootCmd = cobra.Command{
 
 type notebook struct {
 	Entries map[string]string `json:"value"`
-	Ctime time.Time `json:"ctime"`
-	Mtime time.Time `json:"mtime"`
+	Ctime   time.Time         `json:"ctime"`
+	Mtime   time.Time         `json:"mtime"`
 }
 
 func newNotebook() *notebook {
 	now := time.Now()
 	return &notebook{
 		Entries: make(map[string]string),
-		Ctime: now,
-		Mtime: now,
+		Ctime:   now,
+		Mtime:   now,
 	}
 }
 
@@ -91,9 +92,9 @@ func listAllNotebooks() error {
 			n, err := unmarshalItem(it.Item())
 			nName := string(it.Item().Key())
 			if err != nil {
-				fmt.Printf("%s [data corrupted]\n", nName)
+				fmt.Printf("  %s [data corrupted]\n", nName)
 			} else {
-				fmt.Printf("%s (%v)\n", nName, len(n.Entries))
+				fmt.Printf("  %s (%v)\n", nName, len(n.Entries))
 			}
 		}
 
@@ -104,8 +105,8 @@ func listAllNotebooks() error {
 func oneArg(key string) error {
 	var (
 		notebook = key
-		entry = ""
-		value = "n/a"
+		entry    = ""
+		value    = "n/a"
 	)
 
 	err := db.Update(func(txn *badger.Txn) error {
@@ -117,8 +118,8 @@ func oneArg(key string) error {
 				return err
 			}
 
-			for entry := range n.Entries {
-				fmt.Println(entry)
+			for entry, content := range n.Entries {
+				fmt.Printf("    %s (%s)\n", entry, humanize.Bytes(uint64(len(content))))
 			}
 			return nil
 		} else if err != badger.ErrKeyNotFound {

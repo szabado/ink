@@ -92,8 +92,8 @@ func findEntry(txn *badger.Txn, needle string) (notebook string, value string, e
 func notifyUser(err error, notebook, entry, value string) error {
 	logger := log.WithError(err).WithFields(log.Fields{
 		"notebook": notebook,
-		"entry": entry,
-		"value": value})
+		"entry":    entry,
+		"value":    value})
 
 	switch err {
 	case errEntryNotFound:
