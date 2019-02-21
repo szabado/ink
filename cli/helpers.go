@@ -12,6 +12,7 @@ import (
 var (
 	errEntryNotFound  = errors.New("entry not present in any notebook")
 	errDuplicateEntry = errors.New("multiple entries with the same name found")
+	errTerminate      = errors.New("already printed user error, shutting down cli")
 )
 
 func createList(txn *badger.Txn, key []byte) error {
@@ -76,4 +77,38 @@ func findItem(txn *badger.Txn, needle string) (notebook string, value string, er
 	}
 
 	return notebook, value, nil
+}
+
+// notifyUser always notifies the user of the error and always returns an error
+func notifyUser(err error, notebook, entry, value string) error {
+	logger := log.WithError(err).WithFields(log.Fields{
+		"notebook": notebook,
+		"entry": entry,
+		"value": value})
+
+	switch err {
+	case errEntryNotFound:
+		fmt.Printf("%s not found in %s", entry, notebook)
+	case errDuplicateEntry:
+		fmt.Printf("%s found in multiple notebooks", entry)
+	case errTerminate:
+		// Do nothing
+	default:
+		logger.Error("Unknown error")
+		fmt.Printf("ink encountered an unknown error: %v\n", err)
+	}
+	return errTerminate
+}
+
+// handleTerminate returns an error if it's not errTerminate
+func handleTerminate(err error) error {
+	if err != errTerminate {
+		return err
+	}
+	return nil
+}
+
+// handle wraps notifyUser and handleTerminate
+func handle(err error, notebook, entry, value string) error {
+
 }

@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/atotto/clipboard"
 	"github.com/dgraph-io/badger"
@@ -46,13 +47,15 @@ var RootCmd = cobra.Command{
 
 type list struct {
 	Values map[string]string `json:"value"`
-	//Ctime uint64 `json:"ctime"`
-	//Mtime uint64 `json:"mtime"`
+	//Ctime time.Time `json:"ctime"`
+	//Mtime time.Time `json:"mtime"`
 }
 
 func newList() *list {
 	return &list{
 		Values: make(map[string]string),
+		//Ctime: time.Now(),
+		//Mtime: time.Now(),
 	}
 }
 
@@ -62,26 +65,25 @@ func runRoot(cmd *cobra.Command, args []string) error {
 	var err error
 	switch len(args) {
 	case 0:
-		err = zeroArg(args)
+		err = listAll(args)
 	case 1:
 		err = oneArg(args)
 	case 2:
-		err = twoArg(args)
+		err = getEntry(args)
 	default:
 		args[2] = strings.Join(args[2:], " ")
 		args = args[0:3]
 		fallthrough
 	case 3:
-		err = threeArg(args)
+		err = newEntry(args[0], args[1], args[2])
 	}
 
 	return err
 }
 
-func zeroArg(_ []string) error {
-	err := db.View(func(txn *badger.Txn) error {
-		opt := badger.DefaultIteratorOptions
-		it := txn.NewIterator(opt)
+func listAll(_ []string) error {
+	return handleTerminate(db.View(func(txn *badger.Txn) error {
+		it := txn.NewIterator(badger.DefaultIteratorOptions)
 		defer it.Close()
 
 		for it.Rewind(); it.Valid(); it.Next() {
@@ -94,14 +96,12 @@ func zeroArg(_ []string) error {
 		}
 
 		return nil
-	})
-
-	return err
+	}))
 }
 
 func oneArg(args []string) error {
 	key := []byte(args[0])
-	err := db.Update(func(txn *badger.Txn) error {
+	return handleTerminate(db.Update(func(txn *badger.Txn) error {
 		item, err := txn.Get(key)
 		if err == badger.ErrKeyNotFound {
 			log.WithField("key", string(key)).Debug("No list found, looking for matching item")
@@ -142,48 +142,45 @@ func oneArg(args []string) error {
 			fmt.Println(itemName)
 		}
 		return nil
-	})
-
-	return err
+	}))
 }
 
-func twoArg(args []string) error {
-	key := []byte(args[0])
-	err := db.View(func(txn *badger.Txn) error {
+func getEntry(notebook, entry string) error {
+	key := []byte(notebook)
+	return handleTerminate(db.View(func(txn *badger.Txn) error {
 		item, err := txn.Get(key)
-		if err != nil {
-			// TODO: handle missing keys
-			return err
+		if err == badger.ErrKeyNotFound {
+			return notifyUser(err, notebook, entry, "n/a")
+		} else if err != nil {
+			return notifyUser(err, notebook, entry, "n/a")
 		}
 
 		l, err := unmarshalItem(item)
 		if err != nil {
 			return err
 		}
-		return clipboard.WriteAll(l.Values[args[1]])
-	})
-
-	return err
+		return clipboard.WriteAll(l.Values[entry])
+	}))
 }
 
-func threeArg(args []string) error {
-	key := []byte(args[0])
+func newEntry(notebook, entry, content string) error {
+	key := []byte(notebook)
 
 	err := db.Update(func(txn *badger.Txn) error {
 		l := newList()
 
 		item, err := txn.Get(key)
-		if err != nil && err != badger.ErrKeyNotFound {
-			return err
-		} else {
+		if err == badger.ErrKeyNotFound {
 			l, err = unmarshalItem(item)
 
 			if err != nil {
 				return err
 			}
+		} else if err != nil {
+			return err
 		}
 
-		l.Values[args[1]] = args[2]
+		l.Values[entry] = content
 
 		b, err := json.Marshal(l)
 		if err != nil {
@@ -193,5 +190,5 @@ func threeArg(args []string) error {
 		return txn.Set(key, b)
 	})
 
-	return err
+	return handle(err, notebook, entry, content)
 }
