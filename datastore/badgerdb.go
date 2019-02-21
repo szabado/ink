@@ -9,10 +9,14 @@ import (
 	log "github.com/sirupsen/logrus"
 )
 
-func DefaultLocation() string {
+func defaultRootFolder() string {
 	home := os.ExpandEnv("${HOME}")
 
 	return path.Join(home, ".ink")
+}
+
+func DefaultDataFolder() string {
+	return path.Join(defaultRootFolder(), "data")
 }
 
 func Connect(location string) (*badger.DB, error) {

@@ -38,7 +38,7 @@ var RootCmd = cobra.Command{
 		}
 
 		var err error
-		db, err = datastore.Connect(datastore.DefaultLocation())
+		db, err = datastore.Connect(datastore.DefaultDataFolder())
 		if err != nil {
 			log.WithError(err).Fatalf("Could not open ink datastore")
 		}
