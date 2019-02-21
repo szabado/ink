@@ -172,14 +172,14 @@ func newEntry(notebook, entry, content string) error {
 		n := newNotebook()
 
 		item, err := txn.Get(key)
-		if err == badger.ErrKeyNotFound {
+		if err != nil && err != badger.ErrKeyNotFound {
+			return err
+		} else if err == nil {
 			n, err = unmarshalItem(item)
 
 			if err != nil {
 				return err
 			}
-		} else if err != nil {
-			return err
 		}
 
 		n.Entries[entry] = content
